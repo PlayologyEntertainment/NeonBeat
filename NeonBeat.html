@@ -6,7 +6,7 @@
 <title>NeonBeat — Pocket Loop Mixer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Monoton&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Monoton&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
   /* ========== VAPORWAVE DESIGN SYSTEM ========== */
   :root {
@@ -165,9 +165,9 @@
   }
   .brand-text { line-height: 1; }
   .brand-title {
-    font-family: 'Monoton', cursive;
-    font-size: 34px;
-    letter-spacing: 2px;
+    font-family: 'Audiowide', 'Orbitron', sans-serif;
+    font-size: 32px;
+    letter-spacing: 1px;
     background: linear-gradient(180deg, var(--cyan) 0%, var(--pink) 100%);
     -webkit-background-clip: text;
     background-clip: text;
@@ -249,6 +249,42 @@
   }
   .bpm-slider {
     width: 140px;
+  }
+  .bpm-step {
+    flex: 0 0 26px;
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    max-width: 26px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 240, 255, 0.45);
+    background: rgba(10, 4, 32, 0.6);
+    color: var(--cyan);
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: box-shadow 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+    user-select: none;
+  }
+  .bpm-step:hover {
+    border-color: var(--cyan);
+    box-shadow: var(--glow-cyan);
+  }
+  .bpm-step:active {
+    transform: translateY(1px);
+  }
+  .bpm-step:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    box-shadow: none;
+    border-color: rgba(0, 240, 255, 0.2);
   }
 
   /* Play button */
@@ -784,6 +820,8 @@
       </button>
       <div class="bpm-wrap">
         <span class="bpm-label">BPM</span>
+        <button id="bpmDown" class="bpm-step" type="button" aria-label="Decrease BPM" title="Decrease BPM">−</button>
+        <button id="bpmUp" class="bpm-step" type="button" aria-label="Increase BPM" title="Increase BPM">+</button>
         <input id="bpmSlider" class="bpm-slider cyan" type="range" min="60" max="180" value="120" step="1" />
         <span id="bpmValue" class="bpm-value">120</span>
       </div>
@@ -1247,11 +1285,21 @@ const LibraryService = {
     { id: 'kick808',    name: 'Kick 808',      category: 'drums' },
     { id: 'hatsTight',  name: 'Tight Hats',    category: 'drums' },
     { id: 'breakbeat',  name: 'Breakbeat',     category: 'drums' },
+    { id: 'trapHats',   name: 'Trap Rolls',    category: 'drums' },
+    { id: 'clapHouse',  name: 'House Clap',    category: 'drums' },
+    { id: 'tomTribal',  name: 'Tribal Toms',   category: 'drums' },
+    { id: 'glitchPerc', name: 'Glitch Perc',   category: 'drums' },
     { id: 'bassAcid',   name: 'Acid Bass',     category: 'bass'  },
     { id: 'bassSub',    name: 'Sub Bass',      category: 'bass'  },
+    { id: 'bassReese',  name: 'Reese Bass',    category: 'bass'  },
+    { id: 'bassFunk',   name: 'Funk Bass',     category: 'bass'  },
+    { id: 'bassWobble', name: 'Wobble Bass',   category: 'bass'  },
     { id: 'padDream',   name: 'Dream Pad',     category: 'melodic' },
     { id: 'arpNeon',    name: 'Neon Arp',      category: 'melodic' },
-    { id: 'chordSunset',name: 'Sunset Chord',  category: 'melodic' }
+    { id: 'chordSunset',name: 'Sunset Chord',  category: 'melodic' },
+    { id: 'pluckCity',  name: 'Crystal Pluck', category: 'melodic' },
+    { id: 'vocalChop',  name: 'Vocal Chop',    category: 'melodic' },
+    { id: 'leadRetro',  name: 'Retro Lead',    category: 'melodic' }
   ],
 
   _cache: new Map(),
@@ -1444,6 +1492,345 @@ const LibraryService = {
                          Math.sin(2 * Math.PI * freq * 2 * t) * 0.15) * e * 0.2;
               return [v, v * 0.95];
             });
+          });
+        });
+      }
+    } else if (id === 'trapHats') {
+      // Trap-style rolling hats: 16ths with triplet rolls on beats 3 & 4 of bar 2
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        // Standard 16th hats with velocity variation
+        for (let i = 0; i < 16; i++) {
+          const accent = (i % 4 === 0) ? 1 : (i % 2 === 0 ? 0.55 : 0.35);
+          writeVoice(barT + i * sixteenth, 0.05, t => {
+            const e = env(0.001, 0.025, 0, 0.02, 0)(t);
+            const n = (Math.random() * 2 - 1) * e * 0.28 * accent;
+            return [n * 0.85, n];
+          });
+        }
+        // Triplet rolls on second bar, beats 3 & 4 (32nd-note triplets)
+        if (bar === 1) {
+          const rollStart = barT + 2 * beatSec;
+          const tripletStep = beatSec / 6; // 32nd triplets
+          for (let i = 0; i < 12; i++) {
+            const v = 0.4 + (i / 12) * 0.5;
+            writeVoice(rollStart + i * tripletStep, 0.04, t => {
+              const e = env(0.0005, 0.018, 0, 0.015, 0)(t);
+              const n = (Math.random() * 2 - 1) * e * 0.32 * v;
+              return [n, n * 0.9];
+            });
+          }
+        }
+      }
+    } else if (id === 'clapHouse') {
+      // House clap on 2 & 4, with pitched rim clicks on off-beats
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        // Layered claps on 2 and 4 (3 quick noise bursts to simulate hand-clap stack)
+        [1, 3].forEach(beat => {
+          for (let layer = 0; layer < 3; layer++) {
+            writeVoice(barT + beat * beatSec + layer * 0.008, 0.18, t => {
+              const e = env(0.001, 0.015, 0.15, 0.14, 0)(t);
+              const noise = (Math.random() * 2 - 1);
+              // High-passed-ish: emphasize change
+              const v = noise * e * (0.5 - layer * 0.08);
+              return [v * (1 - layer * 0.1), v];
+            });
+          }
+        });
+        // Rim clicks on off-beat 16ths
+        [1.5, 2.75, 3.5].forEach(off => {
+          writeVoice(barT + off * beatSec, 0.05, t => {
+            const e = env(0.001, 0.015, 0, 0.02, 0)(t);
+            const tone = Math.sin(2 * Math.PI * 2200 * t);
+            const click = (Math.random() * 2 - 1) * 0.4;
+            const v = (tone * 0.5 + click) * e * 0.3;
+            return [v * 0.7, v];
+          });
+        });
+        // Soft kick on beat 1 only (very subtle, this loop is clap-led)
+        writeVoice(barT, 0.18, t => {
+          const e = env(0.001, 0.05, 0, 0.13, 0)(t);
+          const p = 90 * Math.exp(-t * 22) + 48;
+          const v = Math.sin(2 * Math.PI * p * t) * e * 0.45;
+          return [v, v];
+        });
+      }
+    } else if (id === 'tomTribal') {
+      // Syncopated tribal toms — no kick, no snare. Three tom pitches in pattern.
+      const toms = [
+        [0,    180], [0.75, 130], [1.25, 220], [1.75, 130],
+        [2.25, 180], [2.75, 100], [3.0,  220], [3.5,  130]
+      ];
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        toms.forEach(([beat, freq], i) => {
+          // Alternate stereo placement for tribal feel
+          const pan = (i % 2 === 0) ? 0.35 : -0.35;
+          writeVoice(barT + beat * beatSec, 0.4, t => {
+            const e = env(0.002, 0.05, 0.25, 0.32, 0)(t);
+            const pitch = freq * Math.exp(-t * 6) + freq * 0.6;
+            const tone = Math.sin(2 * Math.PI * pitch * t);
+            const body = Math.sin(2 * Math.PI * pitch * 0.5 * t) * 0.4;
+            const v = (tone + body) * e * 0.55;
+            return [v * (1 - pan), v * (1 + pan)];
+          });
+        });
+        // Shaker layer: 16ths, very quiet
+        for (let i = 0; i < 16; i++) {
+          if (i % 4 === 2) continue; // gap for groove
+          writeVoice(barT + i * sixteenth, 0.04, t => {
+            const e = env(0.001, 0.02, 0, 0.015, 0)(t);
+            const n = (Math.random() * 2 - 1) * e * 0.12;
+            return [n, n * 0.85];
+          });
+        }
+      }
+    } else if (id === 'glitchPerc') {
+      // IDM-style glitch percussion: stutters, reversed hits, off-grid micro-rhythms
+      const len2 = len; // for reverse logic below
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        // Stutter cluster at beat 1 (5 rapid clicks)
+        for (let s = 0; s < 5; s++) {
+          writeVoice(barT + s * 0.025, 0.03, t => {
+            const e = env(0.0005, 0.012, 0, 0.012, 0)(t);
+            const tone = Math.sin(2 * Math.PI * (1500 + s * 400) * t);
+            const v = tone * e * 0.35;
+            return [v * (s % 2 ? 1 : 0.6), v * (s % 2 ? 0.6 : 1)];
+          });
+        }
+        // Off-grid metallic hit at unusual position
+        writeVoice(barT + 0.6, 0.12, t => {
+          const e = env(0.001, 0.04, 0.1, 0.07, 0)(t);
+          // Inharmonic stack
+          const v = (Math.sin(2*Math.PI*1730*t) + Math.sin(2*Math.PI*2390*t)*0.7
+                   + Math.sin(2*Math.PI*3110*t)*0.4) * e * 0.18;
+          return [v, v * 0.7];
+        });
+        // Crunchy snare-like burst on beat 2.5
+        writeVoice(barT + 1.5 * beatSec, 0.08, t => {
+          const e = env(0.001, 0.03, 0, 0.04, 0)(t);
+          const noise = (Math.random() * 2 - 1);
+          const tone = Math.sin(2 * Math.PI * 320 * t);
+          // Bit-crush feel via quantization
+          const raw = (noise * 0.6 + tone * 0.4) * e;
+          const v = Math.round(raw * 6) / 6 * 0.55;
+          return [v * 0.8, v];
+        });
+        // Granular spray at beat 3
+        for (let g = 0; g < 8; g++) {
+          const off = 2 * beatSec + g * 0.04 + Math.random() * 0.015;
+          writeVoice(barT + off, 0.025, t => {
+            const e = env(0.0005, 0.01, 0, 0.012, 0)(t);
+            const f = 800 + Math.random() * 2000;
+            const v = Math.sin(2 * Math.PI * f * t) * e * 0.22;
+            return [v * Math.random(), v * Math.random()];
+          });
+        }
+        // Reversed-style swell ending the bar (synth via increasing-amplitude noise)
+        const swellStart = barT + 3.5 * beatSec;
+        const swellDur = 0.5 * beatSec;
+        writeVoice(swellStart, swellDur, (t, k) => {
+          const ramp = t / swellDur;
+          const noise = (Math.random() * 2 - 1) * ramp * ramp * 0.35;
+          const tone = Math.sin(2 * Math.PI * (200 + 600 * ramp) * t) * ramp * 0.18;
+          const v = noise + tone;
+          return [v, v * 0.9];
+        });
+      }
+    } else if (id === 'bassReese') {
+      // Reese bass: two slightly-detuned saws creating a growly, beating timbre.
+      // DnB-style note pattern, sustained.
+      const notes = [[0, 33], [1.5, 33], [2, 38], [3.25, 31]];
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        notes.forEach(([beat, midi]) => {
+          const freq = 440 * Math.pow(2, (midi - 69) / 12);
+          // Detune: ~7 cents for that classic reese beating
+          const detuneA = Math.pow(2, -0.07 / 12);
+          const detuneB = Math.pow(2, 0.07 / 12);
+          writeVoice(barT + beat * beatSec, 1.0, t => {
+            const e = env(0.01, 0.1, 0.85, 0.5, 0.4)(t);
+            const phaseA = (freq * detuneA * t) % 1;
+            const phaseB = (freq * detuneB * t) % 1;
+            const sawA = phaseA * 2 - 1;
+            const sawB = phaseB * 2 - 1;
+            // Slow LFO on third saw for extra movement
+            const lfo = 1 + 0.002 * Math.sin(2 * Math.PI * 5.5 * t);
+            const phaseC = (freq * lfo * t) % 1;
+            const sawC = phaseC * 2 - 1;
+            const sub = Math.sin(2 * Math.PI * freq * 0.5 * t) * 0.3;
+            const v = (sawA * 0.4 + sawB * 0.4 + sawC * 0.2 + sub) * e * 0.32;
+            return [v * 0.95, v];
+          });
+        });
+      }
+    } else if (id === 'bassFunk') {
+      // Funk bass: octave jumps, ghost notes, syncopated 16ths
+      // Pattern: [beat-offset, midi, accent (0..1)]
+      const pattern = [
+        [0,    40, 1.0],  // E2 root
+        [0.5,  40, 0.25], // ghost
+        [0.75, 52, 0.85], // E3 octave pop
+        [1.25, 40, 0.3],  // ghost
+        [1.5,  43, 0.9],  // G2
+        [2,    40, 1.0],  // E2
+        [2.5,  40, 0.25], // ghost
+        [2.75, 47, 0.8],  // B2
+        [3.25, 52, 0.9],  // E3 pop
+        [3.75, 40, 0.4]   // tail
+      ];
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        pattern.forEach(([beat, midi, acc]) => {
+          const freq = 440 * Math.pow(2, (midi - 69) / 12);
+          const isSlap = acc > 0.7;
+          writeVoice(barT + beat * beatSec, 0.32, t => {
+            const e = env(0.003, isSlap ? 0.04 : 0.06, 0.4, isSlap ? 0.18 : 0.22, 0.04)(t);
+            // Thumb/slap character: bright transient + body
+            const phase = (freq * t) % 1;
+            const saw = phase * 2 - 1;
+            const sine = Math.sin(2 * Math.PI * freq * t);
+            // Pluck-y bright second harmonic that decays fast
+            const slap = Math.sin(2 * Math.PI * freq * 3 * t) * Math.exp(-t * 25) * (isSlap ? 0.5 : 0.15);
+            const v = (sine * 0.5 + saw * 0.3 + slap) * e * acc * 0.55;
+            return [v, v];
+          });
+        });
+      }
+    } else if (id === 'bassWobble') {
+      // Dubstep-style wobble: sustained note with strong LFO on a "filter" (cheap tilt EQ via mix)
+      const notes = [[0, 28], [2, 31]]; // E1, G1
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        notes.forEach(([beat, midi]) => {
+          const freq = 440 * Math.pow(2, (midi - 69) / 12);
+          writeVoice(barT + beat * beatSec, 2 * beatSec, t => {
+            const e = env(0.01, 0.05, 0.95, 1.5, 0.2)(t);
+            // Wobble LFO at 1/8 note (4 Hz at 120 BPM)
+            const wobRate = 4;
+            const wob = (Math.sin(2 * Math.PI * wobRate * t) + 1) * 0.5; // 0..1
+            const phase = (freq * t) % 1;
+            const saw = phase * 2 - 1;
+            const sq = saw > 0 ? 0.7 : -0.7;
+            const sub = Math.sin(2 * Math.PI * freq * t);
+            // Wobble mixes brightness: low wob = sub-only, high wob = saw+square
+            const bright = (saw * 0.5 + sq * 0.5);
+            const v = (sub * (1 - wob * 0.5) + bright * wob * 0.85) * e * 0.38;
+            return [v * (0.85 + 0.15 * wob), v * (1 - 0.15 * wob)];
+          });
+        });
+      }
+    } else if (id === 'pluckCity') {
+      // Crystal plucks: short, bright, with decay-tail "echoes" (pre-baked delays)
+      const sequence = [60, 67, 72, 76, 67, 72, 64, 60]; // melodic motif
+      const echoTaps = [0, 0.18, 0.36]; // baked-in echo positions
+      const echoGains = [1, 0.45, 0.2];
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        for (let i = 0; i < 8; i++) {
+          const midi = sequence[i] + (bar === 1 ? 5 : 0); // transpose 2nd bar up a 4th
+          const freq = 440 * Math.pow(2, (midi - 69) / 12);
+          const noteT = barT + i * (beatSec / 2); // 8th notes
+          echoTaps.forEach((tap, ti) => {
+            const tapGain = echoGains[ti];
+            writeVoice(noteT + tap, 0.25, t => {
+              const e = env(0.001, 0.04, 0.15, 0.18, 0)(t);
+              const fund = Math.sin(2 * Math.PI * freq * t);
+              const h2 = Math.sin(2 * Math.PI * freq * 2 * t) * 0.4;
+              const h3 = Math.sin(2 * Math.PI * freq * 3 * t) * 0.15;
+              // Bell-like decay on harmonics
+              const bell = (fund + h2 * Math.exp(-t * 8) + h3 * Math.exp(-t * 14));
+              const v = bell * e * 0.18 * tapGain;
+              // Ping-pong-ish stereo
+              const panR = (i + ti) % 2 === 0;
+              return [v * (panR ? 0.6 : 1), v * (panR ? 1 : 0.6)];
+            });
+          });
+        }
+      }
+    } else if (id === 'vocalChop') {
+      // Synthesized "ah" vocal-chop stabs using formant-style additive synthesis.
+      // Three formants approximate an "ah" vowel.
+      const stabs = [
+        [0,    65], // F4
+        [0.75, 67], // G4
+        [1.5,  72], // C5
+        [2.25, 70], // A#4
+        [3,    65], // F4
+        [3.5,  67]  // G4
+      ];
+      // Formant frequencies for "ah": ~700, 1220, 2600 Hz
+      const formants = [700, 1220, 2600];
+      const formantGains = [1.0, 0.6, 0.3];
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        stabs.forEach(([beat, midi], idx) => {
+          const f0 = 440 * Math.pow(2, (midi - 69) / 12);
+          writeVoice(barT + beat * beatSec, 0.35, t => {
+            // Choppy gate envelope
+            const e = env(0.008, 0.06, 0.55, 0.18, 0.04)(t);
+            // Glottal-like buzz: sum of harmonics weighted by formant filter shape
+            let v = 0;
+            for (let h = 1; h <= 12; h++) {
+              const harmFreq = f0 * h;
+              // Compute pseudo-formant gain: peak near each formant freq
+              let gain = 0;
+              for (let fi = 0; fi < formants.length; fi++) {
+                const bw = 80 + fi * 40;
+                const dist = Math.abs(harmFreq - formants[fi]);
+                gain += formantGains[fi] * Math.exp(-(dist * dist) / (bw * bw * 4));
+              }
+              v += Math.sin(2 * Math.PI * harmFreq * t) * gain / h;
+            }
+            // Slight vibrato
+            const vib = 1 + 0.005 * Math.sin(2 * Math.PI * 5.5 * t);
+            v *= vib;
+            v *= e * 0.14;
+            const pan = (idx % 2 === 0) ? 0.2 : -0.2;
+            return [v * (1 - pan), v * (1 + pan)];
+          });
+        });
+      }
+    } else if (id === 'leadRetro') {
+      // 80s synthwave saw lead: melodic phrase with portamento (glide between notes)
+      const phrase = [
+        [0,    72, 0.75], // C5
+        [0.75, 75, 0.5],  // D#5
+        [1.25, 79, 0.5],  // G5
+        [1.75, 77, 1.0],  // F5 (held)
+        [2.75, 75, 0.5],  // D#5
+        [3.25, 72, 0.75]  // C5
+      ];
+      for (let bar = 0; bar < this.LIB_BARS; bar++) {
+        const barT = bar * 4 * beatSec;
+        phrase.forEach(([beat, midi, durBeats], i) => {
+          const targetFreq = 440 * Math.pow(2, (midi - 69) / 12);
+          const prevMidi = i > 0 ? phrase[i - 1][1] : midi;
+          const startFreq = 440 * Math.pow(2, (prevMidi - 69) / 12);
+          const dur = durBeats * beatSec;
+          const glideTime = 0.06; // seconds of portamento at note start
+          // Track instantaneous phase to avoid clicks while sweeping freq
+          let phase = 0;
+          const sr2 = sr;
+          writeVoice(barT + beat * beatSec, dur + 0.15, (t) => {
+            // Glide
+            const glideRatio = t < glideTime ? (t / glideTime) : 1;
+            const f = startFreq + (targetFreq - startFreq) * glideRatio;
+            // Vibrato after glide settles
+            const vib = t > glideTime ? 1 + 0.008 * Math.sin(2 * Math.PI * 5.8 * (t - glideTime)) : 1;
+            phase += (f * vib) / sr2;
+            phase = phase % 1;
+            // Two detuned saws for a fat lead
+            const phaseA = phase;
+            const phaseB = (phase + 0.013) % 1;
+            const sawA = phaseA * 2 - 1;
+            const sawB = phaseB * 2 - 1;
+            const e = env(0.015, 0.08, 0.7, 0.15, dur - 0.27)(t);
+            const v = (sawA * 0.55 + sawB * 0.45) * e * 0.22;
+            // Wide stereo
+            return [v, v * 0.92];
           });
         });
       }
@@ -1819,11 +2206,16 @@ const UI = {
     $('play-solo').classList.toggle('on', track.enabled);
     $('play-solo').textContent = track.enabled ? '▶' : '■';
 
-    // waveform draw (once per load)
+    // waveform draw (once per load); on unload, wipe the canvas so the
+    // previous waveform doesn't linger after Clear All / clear-track.
     if (loaded && !lane.dataset.waveformDrawn) {
       drawWaveform($('wave-canvas'), track.buffer);
       lane.dataset.waveformDrawn = '1';
-    } else if (!loaded) {
+    } else if (!loaded && lane.dataset.waveformDrawn) {
+      const canvas = $('wave-canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset DPR scale from prior draw
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       lane.dataset.waveformDrawn = '';
     }
   },
@@ -2210,6 +2602,8 @@ async function init() {
   // BPM
   const bpmSlider = document.getElementById('bpmSlider');
   const bpmValue = document.getElementById('bpmValue');
+  const bpmDown = document.getElementById('bpmDown');
+  const bpmUp = document.getElementById('bpmUp');
   bpmSlider.addEventListener('input', async (e) => {
     const v = parseInt(e.target.value, 10);
     bpmValue.textContent = v;
@@ -2225,7 +2619,24 @@ async function init() {
         }
       });
     }
+    // Update step button enabled state at min/max bounds.
+    bpmDown.disabled = v <= parseInt(bpmSlider.min, 10);
+    bpmUp.disabled   = v >= parseInt(bpmSlider.max, 10);
   });
+
+  // BPM step buttons: nudge slider value by ±1 and re-fire its input handler
+  // so all BPM logic stays in one place (single source of truth).
+  function nudgeBpm(delta) {
+    const min = parseInt(bpmSlider.min, 10);
+    const max = parseInt(bpmSlider.max, 10);
+    const cur = parseInt(bpmSlider.value, 10);
+    const next = Math.max(min, Math.min(max, cur + delta));
+    if (next === cur) return;
+    bpmSlider.value = next;
+    bpmSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  bpmDown.addEventListener('click', () => nudgeBpm(-1));
+  bpmUp.addEventListener('click',   () => nudgeBpm(+1));
 
   // Toolbar
   document.getElementById('libBtn').addEventListener('click', async () => {
@@ -2237,13 +2648,33 @@ async function init() {
     window.__targetSlot = null;
     document.getElementById('fileInput').click();
   });
-  document.getElementById('clearBtn').addEventListener('click', () => {
-    if (!confirm('Clear all tracks?')) return;
-    TrackService.clearAll();
-    TrackService.stopAll();
-    UI.updateTransportUI();
-    UI.render();
-  });
+  // Two-stage clear: first click arms the button (visibly turns red),
+  // second click within 3s clears. Avoids native confirm() which can be
+  // suppressed by the browser or dismissed accidentally.
+  (() => {
+    const btn = document.getElementById('clearBtn');
+    const ORIGINAL = btn.textContent;
+    let armedTimer = null;
+    const disarm = () => {
+      btn.classList.remove('danger');
+      btn.textContent = ORIGINAL;
+      armedTimer = null;
+    };
+    btn.addEventListener('click', () => {
+      if (!armedTimer) {
+        btn.classList.add('danger');
+        btn.textContent = 'Click again to clear';
+        armedTimer = setTimeout(disarm, 3000);
+        return;
+      }
+      clearTimeout(armedTimer);
+      disarm();
+      TrackService.clearAll();
+      TrackService.stopAll();
+      UI.updateTransportUI();
+      UI.render();
+    });
+  })();
   document.getElementById('demoBtn').addEventListener('click', async () => {
     await AudioEngine.ensure();
     const picks = ['kick808', 'hatsTight', 'bassSub', 'padDream'];
