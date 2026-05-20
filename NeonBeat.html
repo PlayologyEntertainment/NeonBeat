@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
 <title>NeonBeat — Pocket Loop Mixer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,6 +32,11 @@
 
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
+  /* Eliminate 300ms tap delay on all interactive elements on mobile */
+  button, input, [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
 
   body {
     background: var(--void);
@@ -304,6 +311,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    touch-action: manipulation; /* eliminate 300ms tap delay on mobile */
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
   }
   .play-btn:hover { transform: scale(1.05); }
   .play-btn:active { transform: scale(0.95); }
@@ -781,6 +791,19 @@
     .brand-title { font-size: 28px; }
     .transport { gap: 14px; }
     .bpm-slider { width: 110px; }
+    /* Disable heavy backdrop-filter on mobile — causes GPU stalls */
+    .header, .toolbar, .track, .modal-box, .tests {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    /* Disable CRT flicker on mobile — wastes CPU */
+    .app { animation: none !important; }
+    /* Disable grid scroll on mobile — GPU-intensive */
+    .bg-grid::before { animation: none !important; }
+    /* Make touch targets bigger */
+    .tbtn, .btn, .bpm-step { min-height: 44px; min-width: 44px; }
+    input[type="range"] { height: 28px; }
+    .play-btn { width: 72px; height: 72px; }
   }
 
   /* CRT flicker */
@@ -1282,10 +1305,13 @@ const AudioEngine = {
   startTime: 0,            // AudioContext time at which transport last started
   bpm: 120,
   _workletReady: null,     // Promise that resolves when pcm-capture worklet is loaded
+  _workletAvailable: false, // Set to true once the worklet module loads successfully
 
   async ensure() {
     if (!this.ctx) {
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Create AudioContext synchronously inside user gesture for mobile compat.
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
       // Master output
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.value = 0.9;
@@ -1308,20 +1334,46 @@ const AudioEngine = {
       this.delayNode.connect(this.delayFeedback);
       this.delayFeedback.connect(this.delayNode);
       this.delayNode.connect(this.masterGain);
+
+      // Mobile browsers aggressively suspend AudioContext when the page is hidden.
+      // Resume it whenever the user returns to the page.
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+      });
+      window.addEventListener('pageshow', () => {
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+      });
+
+      // CRITICAL FOR MOBILE: Resume the context immediately while still inside
+      // the user gesture. Mobile Chrome requires resume() to be called in the
+      // same gesture that created the context. We await it here before any
+      // async operations that would exit the gesture boundary.
+      if (this.ctx.state === 'suspended') {
+        await this.ctx.resume();
+      }
+    }
+
+    // Always resume if suspended — mobile Chrome suspends the context even
+    // between taps within the same session.
+    if (this.ctx.state === 'suspended') {
+      await this.ctx.resume();
     }
 
     // Register PCM capture AudioWorklet — idempotent, cached as a promise so
     // concurrent callers share the same module-load and we never double-register.
-    // Must run on every ensure() path (not just first-time ctx creation) so that
-    // ensure() always returns a context that has the worklet ready.
     // Use a data: URL (not blob:) so addModule works under file:// and strict CSP.
+    // On some mobile Chrome versions, AudioWorklet data: URL loading can fail;
+    // we catch it gracefully so playback still works (only recording is affected).
     if (!this._workletReady) {
       const workletSrc =
         "class PCMCaptureProcessor extends AudioWorkletProcessor {" +
           "process(inputs) {" +
             "const input = inputs[0];" +
             "if (input && input.length > 0 && input[0] && input[0].length > 0) {" +
-              // Copy both channels if present (stereo mic); fall back to mono if only one.
               "const l = input[0].slice(0);" +
               "const r = input.length > 1 && input[1] ? input[1].slice(0) : null;" +
               "this.port.postMessage({ l: l, r: r });" +
@@ -1331,11 +1383,14 @@ const AudioEngine = {
         "}" +
         "registerProcessor('pcm-capture', PCMCaptureProcessor);";
       const dataUrl = 'data:application/javascript;base64,' + btoa(workletSrc);
-      this._workletReady = this.ctx.audioWorklet.addModule(dataUrl);
+      this._workletReady = this.ctx.audioWorklet.addModule(dataUrl)
+        .then(() => { this._workletAvailable = true; })
+        .catch(e => {
+          console.warn('[NeonBeat] AudioWorklet unavailable (recording disabled):', e);
+          this._workletAvailable = false;
+        });
     }
     await this._workletReady;
-
-    if (this.ctx.state === 'suspended') await this.ctx.resume();
   },
 
   _beatsToSeconds(beats) {
@@ -2271,6 +2326,10 @@ const RecorderService = {
       // callbacks when the main thread is busy, and it is the modern, reliable
       // replacement for ScriptProcessorNode (which is deprecated and silently
       // produces empty input buffers for MediaStreamSource in recent Chrome).
+      // On mobile Chrome where the worklet could not load, bail with a clear message.
+      if (!AudioEngine._workletAvailable) {
+        throw new Error('Audio recording requires a newer browser version. Try updating Chrome or use the Loop Library instead.');
+      }
       this.state = 'recording';
       onPhase?.('recording');
 
@@ -2640,7 +2699,12 @@ function drawWaveform(canvas, buffer) {
 function beatClockTick() {
   const dots = document.querySelectorAll('.beat-dot');
   const barDisplay = document.getElementById('barDisplay');
-  if (!AudioEngine.isPlaying || !AudioEngine.ctx) {
+  // On mobile, AudioContext may be suspended even when isPlaying=true (e.g. after tab switch).
+  // Detect this and resume automatically.
+  if (AudioEngine.isPlaying && AudioEngine.ctx && AudioEngine.ctx.state === 'suspended') {
+    AudioEngine.ctx.resume().catch(() => {});
+  }
+  if (!AudioEngine.isPlaying || !AudioEngine.ctx || AudioEngine.ctx.state === 'suspended') {
     dots.forEach(d => d.classList.remove('active'));
     barDisplay.textContent = '1.1';
   } else {
@@ -2662,7 +2726,8 @@ function beatClockTick() {
       const loopSec = track.effectiveLoopSeconds();
       const pos = (t % loopSec) / loopSec;
       const wf = lane.querySelector('[data-role="waveform"]');
-      head.style.left = (pos * wf.clientWidth) + 'px';
+      const wfW = wf.clientWidth || wf.getBoundingClientRect().width || 220;
+      head.style.left = (pos * wfW) + 'px';
       head.style.opacity = '1';
     });
   }
@@ -2962,15 +3027,30 @@ async function init() {
 
   // 3-second linger on title, then auto-advance to intro screen.
   setTimeout(showIntroScreen, 3000);
-  // Click the title screen to skip ahead.
-  titleScreen.addEventListener('click', showIntroScreen);
-  // CTA dismisses the overlay.
-  dropBeatBtn.addEventListener('click', dismissIntro);
+  // Click/tap the title screen to skip ahead. Also pre-warm AudioContext on mobile.
+  titleScreen.addEventListener('click', () => {
+    showIntroScreen();
+    // Pre-warm AudioContext during this user gesture for mobile compatibility
+    AudioEngine.ensure().catch(() => {});
+  });
+  // CTA dismisses the overlay. Also pre-warm AudioContext on mobile here
+  // since the user gesture gives us permission to create and resume it.
+  dropBeatBtn.addEventListener('click', () => {
+    dismissIntro();
+    // Pre-warm: create AudioContext now while still in the user gesture.
+    // This ensures the context is in 'running' state when Play is tapped,
+    // which is critical on mobile where context creation + resume must
+    // happen during a user gesture.
+    AudioEngine.ensure().catch(() => {});
+  });
   // Keyboard shortcuts — capturing phase so we run before any app handlers.
   document.addEventListener('keydown', onIntroKey, true);
 
-  // Primary transport
-  document.getElementById('playBtn').addEventListener('click', async () => {
+  // Primary transport — use both touchstart and click for mobile responsiveness.
+  // touchstart fires immediately (no 300ms delay), and we prevent default to
+  // stop the subsequent click event from firing twice.
+  let _playBtnTouched = false;
+  const _handlePlayBtn = async () => {
     await AudioEngine.ensure();
     if (AudioEngine.isPlaying) {
       TrackService.stopAll();
@@ -2979,6 +3059,15 @@ async function init() {
     }
     UI.updateTransportUI();
     UI.render();
+  };
+  document.getElementById('playBtn').addEventListener('touchstart', (e) => {
+    e.preventDefault(); // prevent 300ms click delay and double-fire
+    _playBtnTouched = true;
+    _handlePlayBtn();
+  }, { passive: false });
+  document.getElementById('playBtn').addEventListener('click', () => {
+    if (_playBtnTouched) { _playBtnTouched = false; return; } // already handled by touchstart
+    _handlePlayBtn();
   });
 
   // BPM
