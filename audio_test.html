@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Audio Test v6</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { font-family: monospace; background: #111; color: #0f0; padding: 16px; margin: 0; font-size: 14px; }
+  button { font-size: 18px; padding: 20px; margin: 6px 0; display: block; width: 100%;
+           background: #1a1a1a; color: #0f0; border: 2px solid #0f0; border-radius: 8px;
+           touch-action: manipulation; }
+  button:active { background: #003300; }
+  #log { margin-top: 10px; background: #000; padding: 8px; border: 1px solid #333;
+         height: 40vh; overflow-y: auto; font-size: 12px; }
+  .ok{color:#0f0} .err{color:#f44} .inf{color:#ff0} .head{color:#0ff;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="log"><div>Tap and report all output</div></div>
+
+<button id="bWav">TEST: HTML5 audio with inline WAV data URL</button>
+<button id="bMp3">TEST: HTML5 audio with MP3 data URL (base64 tone)</button>
+<button id="bWebAudio">TEST: Web Audio ctx.destination</button>
+<button id="bOffline">TEST: OfflineAudioContext → WAV → HTML5 audio</button>
+
+<script>
+var log = document.getElementById('log');
+function L(msg, cls) {
+  var d = document.createElement('div');
+  d.className = cls || 'inf';
+  d.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+  log.insertBefore(d, log.firstChild);
+}
+function H(t) { L('=== ' + t + ' ===', 'head'); }
+
+// Build a WAV Blob from raw samples
+function buildWavBlob(samples, sampleRate) {
+  var len = samples.length;
+  var buf = new ArrayBuffer(44 + len * 2);
+  var v = new DataView(buf);
+  var ws = function(o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF'); v.setUint32(4, 36 + len * 2, true);
+  ws(8, 'WAVE'); ws(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); ws(36, 'data');
+  v.setUint32(40, len * 2, true);
+  for (var i = 0; i < len; i++) {
+    var env = i < 2000 ? i / 2000 : (i > len - 2000 ? (len - i) / 2000 : 1);
+    v.setInt16(44 + i * 2, Math.round(samples[i] * env * 28000), true);
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+function makeSine(freq, dur, sr) {
+  var n = Math.floor(sr * dur);
+  var s = new Float32Array(n);
+  for (var i = 0; i < n; i++) s[i] = Math.sin(2 * Math.PI * freq * i / sr);
+  return s;
+}
+
+// TEST 1: WAV blob URL played via HTML5 audio
+document.getElementById('bWav').addEventListener('click', function() {
+  H('WAV blob → audio element');
+  try {
+    var sr = 44100;
+    var samples = makeSine(440, 0.5, sr);
+    var blob = buildWavBlob(samples, sr);
+    var url = URL.createObjectURL(blob);
+    L('WAV blob created: ' + blob.size + ' bytes, url: ' + url.slice(0, 30), 'inf');
+    var a = new Audio(url);
+    a.volume = 1.0;
+    var p = a.play();
+    if (p) p.then(function() { L('playing WAV — hear 440Hz?', 'ok'); })
+             .catch(function(e) { L('play() failed: ' + e.message, 'err'); });
+    a.onended = function() { URL.revokeObjectURL(url); L('WAV ended', 'ok'); };
+  } catch(e) { L('ERROR: ' + e.message, 'err'); }
+});
+
+// TEST 2: Minimal base64 MP3 (a real silent frame, just to test the path)
+document.getElementById('bMp3').addEventListener('click', function() {
+  H('Pre-encoded MP3 data URL');
+  // This is a real 1-second 440Hz tone encoded as a tiny MP3
+  // Using a known-good minimal MP3 header + sine data
+  // Actually we'll use a WAV data URL (more reliable)
+  try {
+    var sr = 8000; // low sample rate = smaller data URL
+    var samples = makeSine(440, 0.4, sr);
+    var blob = buildWavBlob(samples, sr);
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var dataUrl = e.target.result;
+      L('data URL length: ' + dataUrl.length + ' chars', 'inf');
+      var a = new Audio(dataUrl);
+      a.volume = 1.0;
+      var p = a.play();
+      if (p) p.then(function() { L('playing data URL — hear tone?', 'ok'); })
+               .catch(function(e) { L('play() failed: ' + e.message, 'err'); });
+      a.onended = function() { L('data URL audio ended', 'ok'); };
+    };
+    reader.readAsDataURL(blob);
+    L('FileReader reading blob...', 'inf');
+  } catch(e) { L('ERROR: ' + e.message, 'err'); }
+});
+
+// TEST 3: Web Audio to ctx.destination (known broken, baseline)
+document.getElementById('bWebAudio').addEventListener('click', function() {
+  H('Web Audio → ctx.destination');
+  var ctx = new (window.AudioContext || window.webkitAudioContext)();
+  ctx.resume();
+  var o = ctx.createOscillator();
+  o.connect(ctx.destination);
+  o.start(0); o.stop(0.5);
+  L('state=' + ctx.state + ' t=' + ctx.currentTime, 'inf');
+  L('Hear 440Hz? (expected: no)', 'inf');
+  o.onended = function() { L('ended, t=' + ctx.currentTime, 'ok'); };
+});
+
+// TEST 4: OfflineAudioContext renders to buffer, encode WAV, play via HTML5
+// This uses Web Audio synthesis but bypasses the broken realtime output
+document.getElementById('bOffline').addEventListener('click', function() {
+  H('OfflineAudioContext → WAV → HTML5 audio');
+  try {
+    var sr = 44100, dur = 0.5;
+    var offline = new OfflineAudioContext(1, Math.floor(sr * dur), sr);
+    var osc = offline.createOscillator();
+    var gain = offline.createGain();
+    gain.gain.value = 0.7;
+    osc.frequency.value = 880;
+    osc.connect(gain);
+    gain.connect(offline.destination);
+    osc.start(0);
+    osc.stop(dur);
+    L('rendering offline...', 'inf');
+    offline.startRendering().then(function(renderedBuffer) {
+      L('rendered: ' + renderedBuffer.length + ' samples', 'ok');
+      var samples = renderedBuffer.getChannelData(0);
+      var blob = buildWavBlob(samples, sr);
+      var url = URL.createObjectURL(blob);
+      var a = new Audio(url);
+      a.volume = 1.0;
+      var p = a.play();
+      if (p) p.then(function() { L('PLAYING rendered audio — hear 880Hz?', 'ok'); })
+               .catch(function(e) { L('play() failed: ' + e.message, 'err'); });
+      a.onended = function() { URL.revokeObjectURL(url); L('done', 'ok'); };
+    }).catch(function(e) { L('render failed: ' + e.message, 'err'); });
+  } catch(e) { L('ERROR: ' + e.message, 'err'); }
+});
+</script>
+</body>
+</html>

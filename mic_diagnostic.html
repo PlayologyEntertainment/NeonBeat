@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>NeonBeat · Mic Diagnostic</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
+
+  :root {
+    --pink:   #ff2d78;
+    --cyan:   #00f5ff;
+    --purple: #0d0015;
+    --mid:    #1a0030;
+    --pass:   #00ff9f;
+    --fail:   #ff2d78;
+    --warn:   #ffe600;
+    --text:   #e0d4ff;
+    --dim:    #6b4fa0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--purple);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 16px;
+    overflow-x: hidden;
+  }
+
+  /* Scanlines overlay */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px, transparent 2px,
+      rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(14px, 4vw, 22px);
+    color: var(--cyan);
+    text-shadow: 0 0 12px var(--cyan);
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: var(--dim);
+    font-size: 11px;
+    margin-bottom: 20px;
+    letter-spacing: 1px;
+  }
+
+  #run-btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, var(--pink), #9b00ff);
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    box-shadow: 0 0 24px rgba(255,45,120,0.5);
+    margin-bottom: 20px;
+    transition: opacity 0.2s;
+  }
+  #run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .test-card {
+    background: var(--mid);
+    border: 1px solid #2a004a;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+
+  .test-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .badge {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    flex-shrink: 0;
+    border: 2px solid var(--dim);
+    color: var(--dim);
+    font-family: 'Orbitron', sans-serif;
+  }
+  .badge.pass  { border-color: var(--pass); color: var(--pass); box-shadow: 0 0 8px var(--pass); }
+  .badge.fail  { border-color: var(--fail); color: var(--fail); box-shadow: 0 0 8px var(--fail); }
+  .badge.warn  { border-color: var(--warn); color: var(--warn); box-shadow: 0 0 8px var(--warn); }
+  .badge.running { border-color: var(--cyan); color: var(--cyan); animation: pulse 0.6s infinite alternate; }
+
+  @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
+
+  .test-label {
+    flex: 1;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+  .test-label strong { color: var(--cyan); font-family: 'Orbitron', sans-serif; font-size: 10px; }
+
+  .test-body {
+    padding: 0 14px 12px 46px;
+    display: none;
+    font-size: 11px;
+    line-height: 1.8;
+    color: var(--dim);
+    border-top: 1px solid #2a004a;
+  }
+  .test-body.open { display: block; }
+  .test-body .kv  { display: flex; gap: 8px; }
+  .test-body .k   { color: var(--dim); min-width: 120px; }
+  .test-body .v   { color: var(--text); word-break: break-all; }
+  .test-body .v.good { color: var(--pass); }
+  .test-body .v.bad  { color: var(--fail); }
+  .test-body .v.warn { color: var(--warn); }
+  .test-body .err { color: var(--fail); margin-top: 4px; }
+
+  #summary {
+    margin-top: 20px;
+    padding: 14px;
+    background: var(--mid);
+    border-radius: 8px;
+    border: 1px solid #2a004a;
+    font-size: 12px;
+    line-height: 2;
+    display: none;
+  }
+  #summary.show { display: block; }
+  #summary h2 { font-family: 'Orbitron', sans-serif; font-size: 12px; color: var(--pink); margin-bottom: 8px; letter-spacing: 2px; }
+
+  canvas {
+    width: 100%;
+    height: 60px;
+    display: block;
+    margin-top: 8px;
+    border-radius: 4px;
+    background: #0a0018;
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: #2a004a;
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--pink));
+    width: 0%;
+    transition: width 0.1s linear;
+  }
+</style>
+</head>
+<body>
+
+<h1>🎙 MIC DIAGNOSTIC</h1>
+<div class="subtitle">NEONBEAT · ANDROID CHROME · v1.0</div>
+
+<button id="run-btn">▶ RUN ALL TESTS</button>
+
+<!-- T1 -->
+<div class="test-card" id="card-t1">
+  <div class="test-header" onclick="toggleBody('t1')">
+    <div class="badge" id="badge-t1">1</div>
+    <div class="test-label"><strong>T1</strong> getUserMedia &amp; Permission State</div>
+  </div>
+  <div class="test-body" id="body-t1"></div>
+</div>
+
+<!-- T2 -->
+<div class="test-card" id="card-t2">
+  <div class="test-header" onclick="toggleBody('t2')">
+    <div class="badge" id="badge-t2">2</div>
+    <div class="test-label"><strong>T2</strong> AudioContext State at Record Time</div>
+  </div>
+  <div class="test-body" id="body-t2"></div>
+</div>
+
+<!-- T3 -->
+<div class="test-card" id="card-t3">
+  <div class="test-header" onclick="toggleBody('t3')">
+    <div class="badge" id="badge-t3">3</div>
+    <div class="test-label"><strong>T3</strong> AudioWorklet Module Load</div>
+  </div>
+  <div class="test-body" id="body-t3"></div>
+</div>
+
+<!-- T4 -->
+<div class="test-card" id="card-t4">
+  <div class="test-header" onclick="toggleBody('t4')">
+    <div class="badge" id="badge-t4">4</div>
+    <div class="test-label"><strong>T4</strong> PCM Capture (2 sec live mic)</div>
+  </div>
+  <div class="test-body" id="body-t4">
+    <div class="progress-bar"><div class="progress-fill" id="t4-progress"></div></div>
+  </div>
+</div>
+
+<!-- T5 -->
+<div class="test-card" id="card-t5">
+  <div class="test-header" onclick="toggleBody('t5')">
+    <div class="badge" id="badge-t5">5</div>
+    <div class="test-label"><strong>T5</strong> Channel Energy &amp; Signal Analysis</div>
+  </div>
+  <div class="test-body" id="body-t5">
+    <canvas id="t5-canvas"></canvas>
+  </div>
+</div>
+
+<!-- T6 -->
+<div class="test-card" id="card-t6">
+  <div class="test-header" onclick="toggleBody('t6')">
+    <div class="badge" id="badge-t6">6</div>
+    <div class="test-label"><strong>T6</strong> MediaStreamSource → Worklet Graph Pull</div>
+  </div>
+  <div class="test-body" id="body-t6"></div>
+</div>
+
+<div id="summary">
+  <h2>DIAGNOSIS</h2>
+  <div id="summary-text"></div>
+</div>
+
+<script>
+// ─── Helpers ───────────────────────────────────────────────────────────────
+function kv(k, v, cls='') {
+  return `<div class="kv"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
+}
+function err(msg) { return `<div class="err">⚠ ${msg}</div>`; }
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function setBadge(id, state) {
+  const el = document.getElementById('badge-' + id);
+  el.className = 'badge ' + state;
+  const icons = { pass:'✓', fail:'✗', warn:'!', running:'…' };
+  if (icons[state]) el.textContent = icons[state];
+}
+function setBody(id, html) {
+  const el = document.getElementById('body-' + id);
+  el.innerHTML = (el.innerHTML || '') + html;
+  el.classList.add('open');
+}
+function clearBody(id) {
+  document.getElementById('body-' + id).innerHTML = '';
+}
+function toggleBody(id) {
+  document.getElementById('body-' + id).classList.toggle('open');
+}
+
+// ─── State ─────────────────────────────────────────────────────────────────
+let stream = null;
+let ctx    = null;
+let results = {};
+
+// ─── T1: getUserMedia + permission query ───────────────────────────────────
+async function runT1() {
+  setBadge('t1', 'running');
+  clearBody('t1');
+
+  // Check Permissions API first (non-blocking)
+  let permState = 'unknown';
+  try {
+    const ps = await navigator.permissions.query({ name: 'microphone' });
+    permState = ps.state; // 'granted' | 'denied' | 'prompt'
+  } catch(e) {
+    permState = 'Permissions API unavailable: ' + e.message;
+  }
+  setBody('t1', kv('permissions.query result', permState,
+    permState === 'denied' ? 'bad' : permState === 'granted' ? 'good' : 'warn'));
+
+  // Check mediaDevices exists
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setBody('t1', err('getUserMedia not available'));
+    setBadge('t1', 'fail');
+    results.t1 = false;
+    return null;
+  }
+  setBody('t1', kv('getUserMedia', 'available', 'good'));
+
+  // Enumerate devices before requesting
+  let devices = [];
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    setBody('t1', kv('audioinput devices', mics.length,
+      mics.length > 0 ? 'good' : 'bad'));
+    mics.forEach((m, i) => {
+      setBody('t1', kv(`  mic[${i}] label`, m.label || '(no label — not yet granted)', 'warn'));
+      setBody('t1', kv(`  mic[${i}] id`, m.deviceId.slice(0,20) + '…'));
+    });
+  } catch(e) {
+    setBody('t1', err('enumerateDevices failed: ' + e.message));
+  }
+
+  // Attempt getUserMedia
+  let s = null;
+  const t0 = performance.now();
+  try {
+    s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const elapsed = (performance.now() - t0).toFixed(0);
+    setBody('t1', kv('getUserMedia resolved', `in ${elapsed} ms`, 'good'));
+  } catch(e) {
+    const elapsed = (performance.now() - t0).toFixed(0);
+    setBody('t1', kv('getUserMedia resolved', `in ${elapsed} ms`));
+    setBody('t1', err(`Failed: ${e.name}: ${e.message}`));
+    setBadge('t1', 'fail');
+    results.t1 = false;
+    return null;
+  }
+
+  // Inspect the stream
+  const tracks = s.getAudioTracks();
+  setBody('t1', kv('audio tracks', tracks.length, tracks.length > 0 ? 'good' : 'bad'));
+  tracks.forEach((tr, i) => {
+    const settings = tr.getSettings?.() || {};
+    setBody('t1', kv(`  track[${i}] label`, tr.label || '(empty)', tr.label ? 'good' : 'warn'));
+    setBody('t1', kv(`  track[${i}] state`, tr.readyState, tr.readyState === 'live' ? 'good' : 'bad'));
+    setBody('t1', kv(`  track[${i}] muted`, tr.muted, tr.muted ? 'bad' : 'good'));
+    setBody('t1', kv(`  track[${i}] enabled`, tr.enabled, tr.enabled ? 'good' : 'bad'));
+    if (settings.channelCount !== undefined)
+      setBody('t1', kv(`  track[${i}] channelCount`, settings.channelCount));
+    if (settings.sampleRate !== undefined)
+      setBody('t1', kv(`  track[${i}] sampleRate`, settings.sampleRate));
+    if (settings.echoCancellation !== undefined)
+      setBody('t1', kv(`  track[${i}] echoCancellation`, settings.echoCancellation));
+  });
+
+  const passed = tracks.length > 0 && tracks[0].readyState === 'live' && !tracks[0].muted;
+  setBadge('t1', passed ? 'pass' : 'warn');
+  results.t1 = passed;
+  stream = s;
+  return s;
+}
+
+// ─── T2: AudioContext state ─────────────────────────────────────────────────
+async function runT2() {
+  setBadge('t2', 'running');
+  clearBody('t2');
+
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch(e) {
+    setBody('t2', err('AudioContext constructor failed: ' + e.message));
+    setBadge('t2', 'fail');
+    results.t2 = false;
+    return;
+  }
+
+  setBody('t2', kv('ctx.state after new', ctx.state,
+    ctx.state === 'running' ? 'good' : 'warn'));
+  setBody('t2', kv('ctx.sampleRate', ctx.sampleRate));
+  setBody('t2', kv('ctx.baseLatency', ctx.baseLatency?.toFixed(4) ?? 'n/a'));
+
+  if (ctx.state === 'suspended') {
+    setBody('t2', kv('attempting ctx.resume()', '…'));
+    try {
+      await ctx.resume();
+      setBody('t2', kv('ctx.state after resume()', ctx.state,
+        ctx.state === 'running' ? 'good' : 'bad'));
+    } catch(e) {
+      setBody('t2', err('ctx.resume() failed: ' + e.message));
+    }
+  }
+
+  // Test: can we create an oscillator and hear it (graph-pull test, silent)
+  try {
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    g.gain.value = 0;
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.01);
+    await wait(50);
+    setBody('t2', kv('oscillator start/stop', 'OK', 'good'));
+  } catch(e) {
+    setBody('t2', err('Oscillator test failed: ' + e.message));
+  }
+
+  const passed = ctx.state === 'running';
+  setBadge('t2', passed ? 'pass' : 'fail');
+  results.t2 = passed;
+}
+
+// ─── T3: AudioWorklet load ─────────────────────────────────────────────────
+async function runT3() {
+  setBadge('t3', 'running');
+  clearBody('t3');
+
+  if (!ctx) {
+    setBody('t3', err('No AudioContext from T2'));
+    setBadge('t3', 'fail');
+    results.t3 = false;
+    return;
+  }
+  if (!window.AudioWorkletNode) {
+    setBody('t3', err('AudioWorkletNode not supported'));
+    setBadge('t3', 'fail');
+    results.t3 = false;
+    return;
+  }
+  setBody('t3', kv('AudioWorkletNode', 'supported', 'good'));
+
+  const src =
+    "class P extends AudioWorkletProcessor{" +
+      "process(inputs){" +
+        "this.port.postMessage({samples: inputs[0]?.[0]?.length ?? 0});" +
+        "return true;" +
+      "}" +
+    "}" +
+    "registerProcessor('diag-capture',P);";
+
+  // Try Blob URL first
+  let method = '';
+  let loaded = false;
+  const blobUrl = URL.createObjectURL(new Blob([src], {type:'application/javascript'}));
+  try {
+    await ctx.audioWorklet.addModule(blobUrl);
+    method = 'Blob URL';
+    loaded = true;
+  } catch(e) {
+    setBody('t3', kv('Blob URL', 'failed: ' + e.message, 'warn'));
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  if (!loaded) {
+    try {
+      await ctx.audioWorklet.addModule(
+        'data:application/javascript;base64,' + btoa(src)
+      );
+      method = 'data: URL';
+      loaded = true;
+    } catch(e) {
+      setBody('t3', err('data: URL also failed: ' + e.message));
+    }
+  }
+
+  if (loaded) {
+    setBody('t3', kv('module loaded via', method, 'good'));
+    setBadge('t3', 'pass');
+    results.t3 = { loaded, method };
+  } else {
+    setBadge('t3', 'fail');
+    results.t3 = false;
+  }
+}
+
+// ─── T4: PCM capture for 2 seconds ─────────────────────────────────────────
+async function runT4() {
+  setBadge('t4', 'running');
+  // keep existing body content (progress bar is already there)
+  setBody('t4', kv('recording duration', '2 seconds'));
+
+  if (!stream || !ctx || !results.t3) {
+    setBody('t4', err('Skipped — requires T1+T2+T3 to pass'));
+    setBadge('t4', 'fail');
+    results.t4 = false;
+    return;
+  }
+
+  const sr         = ctx.sampleRate;
+  const recordSec  = 2;
+  const targetLen  = Math.floor(sr * recordSec);
+  const captured   = []; // {l, r}
+  let   samplesRecorded = 0;
+  let   messagesReceived = 0;
+
+  const progressEl = document.getElementById('t4-progress');
+
+  try {
+    const micSource = ctx.createMediaStreamSource(stream);
+    setBody('t4', kv('micSource created', 'OK', 'good'));
+    setBody('t4', kv('ctx.state at source create', ctx.state,
+      ctx.state === 'running' ? 'good' : 'bad'));
+
+    const node = new AudioWorkletNode(ctx, 'diag-capture', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCountMode: 'max',
+      channelInterpretation: 'discrete' // ← key: avoid downmix cancellation
+    });
+
+    node.port.onmessage = (ev) => {
+      messagesReceived++;
+    };
+
+    // Must connect to destination to pull the graph
+    const silentGain = ctx.createGain();
+    silentGain.gain.value = 0;
+    micSource.connect(node);
+    node.connect(silentGain);
+    silentGain.connect(ctx.destination);
+
+    setBody('t4', kv('graph connected', 'OK', 'good'));
+
+    // Wait and track progress
+    const step = 100;
+    for (let elapsed = 0; elapsed < recordSec * 1000; elapsed += step) {
+      await wait(step);
+      progressEl.style.width = (elapsed / (recordSec * 1000) * 100) + '%';
+    }
+    progressEl.style.width = '100%';
+    await wait(300); // last quantum buffer
+
+    setBody('t4', kv('worklet messages received', messagesReceived,
+      messagesReceived > 0 ? 'good' : 'bad'));
+
+    // Disconnect
+    silentGain.disconnect();
+    node.disconnect();
+    micSource.disconnect();
+
+    results.t4 = { messagesReceived };
+    setBadge('t4', messagesReceived > 0 ? 'pass' : 'fail');
+  } catch(e) {
+    setBody('t4', err(e.message));
+    setBadge('t4', 'fail');
+    results.t4 = false;
+  }
+}
+
+// ─── T5: Channel energy analysis — 3 seconds, full signal capture ──────────
+async function runT5() {
+  setBadge('t5', 'running');
+
+  if (!stream || !ctx || !results.t3) {
+    setBody('t5', err('Skipped — requires T1+T2+T3 to pass'));
+    setBadge('t5', 'fail');
+    results.t5 = false;
+    return;
+  }
+
+  const src5 =
+    "class P5 extends AudioWorkletProcessor{" +
+      "process(inputs){" +
+        "const ch=inputs[0];" +
+        "const l=ch?.[0];" +
+        "const r=ch?.[1];" +
+        "if(l&&l.length){" +
+          "this.port.postMessage({l:l.slice(0), r:r?r.slice(0):null});" +
+        "}" +
+        "return true;" +
+      "}" +
+    "}" +
+    "registerProcessor('diag-ch',P5);";
+
+  // Register a new processor name for the full-capture version
+  let loaded5 = false;
+  try {
+    const blobUrl5 = URL.createObjectURL(new Blob([src5], {type:'application/javascript'}));
+    await ctx.audioWorklet.addModule(blobUrl5);
+    URL.revokeObjectURL(blobUrl5);
+    loaded5 = true;
+  } catch(e) {
+    try {
+      await ctx.audioWorklet.addModule('data:application/javascript;base64,' + btoa(src5));
+      loaded5 = true;
+    } catch(e2) {
+      setBody('t5', err('Could not load T5 worklet: ' + e2.message));
+    }
+  }
+
+  if (!loaded5) {
+    setBadge('t5', 'fail');
+    results.t5 = false;
+    return;
+  }
+
+  const sr       = ctx.sampleRate;
+  const capSec   = 3;
+  const captured = [];
+
+  try {
+    const micSource = ctx.createMediaStreamSource(stream);
+    const node = new AudioWorkletNode(ctx, 'diag-ch', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCountMode: 'max',
+      channelInterpretation: 'discrete'
+    });
+    node.port.onmessage = (ev) => {
+      captured.push(ev.data);
+    };
+    const silentGain = ctx.createGain();
+    silentGain.gain.value = 0;
+    micSource.connect(node);
+    node.connect(silentGain);
+    silentGain.connect(ctx.destination);
+
+    await wait(capSec * 1000 + 300);
+
+    silentGain.disconnect(); node.disconnect(); micSource.disconnect();
+
+    // Assemble channels
+    let totalSamples = 0;
+    captured.forEach(c => { totalSamples += c.l.length; });
+
+    const bufL = new Float32Array(totalSamples);
+    const bufR = new Float32Array(totalSamples);
+    let off = 0;
+    captured.forEach(c => {
+      bufL.set(c.l, off);
+      if (c.r) bufR.set(c.r, off);
+      off += c.l.length;
+    });
+
+    // RMS per channel
+    let sumL = 0, sumR = 0, peakL = 0, peakR = 0;
+    for (let i = 0; i < totalSamples; i++) {
+      sumL += bufL[i] * bufL[i]; if (Math.abs(bufL[i]) > peakL) peakL = Math.abs(bufL[i]);
+      sumR += bufR[i] * bufR[i]; if (Math.abs(bufR[i]) > peakR) peakR = Math.abs(bufR[i]);
+    }
+    const rmsL = Math.sqrt(sumL / totalSamples);
+    const rmsR = Math.sqrt(sumR / totalSamples);
+
+    // Detect if channels are near-identical (mono mic broadcasting as stereo)
+    let diffSum = 0;
+    for (let i = 0; i < totalSamples; i++) diffSum += Math.abs(bufL[i] - bufR[i]);
+    const avgDiff = diffSum / totalSamples;
+    const nearIdentical = avgDiff < 1e-6;
+
+    // Detect inverted channels
+    let corrSum = 0;
+    const sampleCheck = Math.min(totalSamples, 4096);
+    for (let i = 0; i < sampleCheck; i++) corrSum += bufL[i] * bufR[i];
+    const isInverted = corrSum < 0 && rmsL > 0.001 && rmsR > 0.001;
+
+    setBody('t5', kv('total samples captured', totalSamples,
+      totalSamples > sr ? 'good' : 'bad'));
+    setBody('t5', kv('sampleRate', sr));
+    setBody('t5', kv('ch[0] RMS', rmsL.toExponential(3),
+      rmsL > 0.001 ? 'good' : rmsL > 0.0001 ? 'warn' : 'bad'));
+    setBody('t5', kv('ch[0] peak', peakL.toExponential(3),
+      peakL > 0.01 ? 'good' : peakL > 0.001 ? 'warn' : 'bad'));
+    setBody('t5', kv('ch[1] RMS', rmsR.toExponential(3),
+      rmsR > 0.001 ? 'good' : 'warn'));
+    setBody('t5', kv('ch[1] peak', peakR.toExponential(3)));
+    setBody('t5', kv('ch[1] present', captured[0]?.r !== null ? 'yes' : 'NO — mono only',
+      captured[0]?.r !== null ? 'good' : 'warn'));
+    setBody('t5', kv('channels near-identical', nearIdentical ? 'YES (true mono mic)' : 'no',
+      nearIdentical ? 'warn' : 'good'));
+    setBody('t5', kv('channels inverted', isInverted ? 'YES ← likely bug source' : 'no',
+      isInverted ? 'bad' : 'good'));
+    setBody('t5', kv('avg L-R difference', avgDiff.toExponential(3)));
+
+    // Draw waveform on canvas
+    const canvas = document.getElementById('t5-canvas');
+    const W = canvas.width = canvas.offsetWidth * devicePixelRatio;
+    const H = canvas.height = 60 * devicePixelRatio;
+    const gfx = canvas.getContext('2d');
+    gfx.fillStyle = '#0a0018';
+    gfx.fillRect(0, 0, W, H);
+
+    // Draw ch[0]
+    const step = Math.floor(totalSamples / W);
+    gfx.strokeStyle = '#00f5ff';
+    gfx.lineWidth = 1;
+    gfx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const s = bufL[x * step] ?? 0;
+      const y = (0.5 - s * 0.45) * H;
+      x === 0 ? gfx.moveTo(x, y) : gfx.lineTo(x, y);
+    }
+    gfx.stroke();
+
+    // Draw ch[1] if present
+    if (rmsR > 1e-10) {
+      gfx.strokeStyle = 'rgba(255,45,120,0.6)';
+      gfx.beginPath();
+      for (let x = 0; x < W; x++) {
+        const s = bufR[x * step] ?? 0;
+        const y = (0.5 - s * 0.45) * H;
+        x === 0 ? gfx.moveTo(x, y) : gfx.lineTo(x, y);
+      }
+      gfx.stroke();
+    }
+
+    const hasSignal = rmsL > 0.001 || rmsR > 0.001;
+    results.t5 = { rmsL, rmsR, peakL, peakR, nearIdentical, isInverted, totalSamples, bufL, bufR };
+    setBadge('t5', hasSignal ? 'pass' : 'fail');
+  } catch(e) {
+    setBody('t5', err(e.message));
+    setBadge('t5', 'fail');
+    results.t5 = false;
+  }
+}
+
+// ─── T6: Graph pull verification — ctx state DURING source create ───────────
+async function runT6() {
+  setBadge('t6', 'running');
+  clearBody('t6');
+
+  if (!stream || !ctx) {
+    setBody('t6', err('Skipped — requires T1+T2'));
+    setBadge('t6', 'fail');
+    results.t6 = false;
+    return;
+  }
+
+  // This test checks whether the AudioContext state degrades back to
+  // suspended between tests — a common Android Chrome behavior where
+  // the context auto-suspends when no audio is being rendered.
+  setBody('t6', kv('ctx.state now', ctx.state,
+    ctx.state === 'running' ? 'good' : 'bad'));
+
+  if (ctx.state !== 'running') {
+    try {
+      await ctx.resume();
+      setBody('t6', kv('ctx.resume() called', 'OK', 'good'));
+      setBody('t6', kv('ctx.state after resume', ctx.state,
+        ctx.state === 'running' ? 'good' : 'bad'));
+    } catch(e) {
+      setBody('t6', err('ctx.resume() threw: ' + e.message));
+    }
+  }
+
+  // Check if track became muted or ended during tests
+  const tracks = stream.getAudioTracks();
+  tracks.forEach((tr, i) => {
+    setBody('t6', kv(`track[${i}].readyState`, tr.readyState,
+      tr.readyState === 'live' ? 'good' : 'bad'));
+    setBody('t6', kv(`track[${i}].muted`, String(tr.muted),
+      tr.muted ? 'bad' : 'good'));
+    setBody('t6', kv(`track[${i}].enabled`, String(tr.enabled),
+      tr.enabled ? 'good' : 'bad'));
+  });
+
+  // Check: does the MediaStream remain active?
+  setBody('t6', kv('stream.active', stream.active,
+    stream.active ? 'good' : 'bad'));
+
+  const passed = ctx.state === 'running' && stream.active && !tracks[0]?.muted;
+  setBadge('t6', passed ? 'pass' : 'fail');
+  results.t6 = passed;
+}
+
+// ─── Diagnosis engine ──────────────────────────────────────────────────────
+function buildDiagnosis() {
+  const lines = [];
+
+  if (!results.t1) {
+    lines.push('🔴 <b>ROOT CAUSE: getUserMedia failed or permission denied.</b> Check Chrome site settings → Microphone for this page. The permission prompt may have been permanently dismissed.');
+    return lines.join('<br>');
+  }
+
+  const t1Track = stream?.getAudioTracks()?.[0];
+  if (t1Track?.muted) {
+    lines.push('🔴 <b>ROOT CAUSE: Mic track is muted.</b> The stream exists but the OS or Android is muting it. This can happen when another app holds the mic, or when Chrome is backgrounded at the moment of capture.');
+  }
+
+  if (!results.t2) {
+    lines.push('🔴 <b>ROOT CAUSE: AudioContext stayed suspended.</b> ctx.resume() must be called synchronously inside a user gesture handler before recording begins. The NeonBeat count-in delay may be breaking this — the context suspends again before recording starts.');
+  }
+
+  if (!results.t3) {
+    lines.push('🔴 <b>ROOT CAUSE: AudioWorklet failed to load.</b> Neither Blob URL nor data: URL worked. This browser/OS combination may not support AudioWorklet at all — a ScriptProcessorNode fallback is needed.');
+    return lines.join('<br>');
+  }
+
+  if (results.t4 && results.t4.messagesReceived === 0) {
+    lines.push('🔴 <b>ROOT CAUSE: Worklet loaded but process() never fired.</b> The graph is not being pulled. This means either the AudioContext is suspended during capture, or createMediaStreamSource() is receiving a silent/dead stream.');
+  }
+
+  if (results.t5) {
+    const { rmsL, rmsR, isInverted, nearIdentical } = results.t5;
+    if (rmsL < 1e-5 && rmsR < 1e-5) {
+      lines.push('🔴 <b>ROOT CAUSE: Signal is pure noise floor on both channels.</b> The mic stream is connected but delivering silence. Android may be routing audio to the wrong device (e.g., Bluetooth headset taking mic priority).');
+    } else if (isInverted) {
+      lines.push('🟡 <b>FOUND: Channels are phase-inverted.</b> The current code uses channelInterpretation: "speakers" for capture — a stereo downmix of inverted channels cancels to silence. Fix: use "discrete" and pick the higher-RMS channel.');
+    } else if (nearIdentical) {
+      lines.push('🟢 Mono mic (both channels identical). Signal is present. The bug is elsewhere.');
+    } else if (rmsL > 0.001 || rmsR > 0.001) {
+      lines.push('🟢 Good signal detected on at least one channel (RMS > 0.001). The bug is likely in how NeonBeat assembles or normalizes post-capture.');
+    }
+  }
+
+  if (results.t6 === false) {
+    lines.push('🟡 <b>FOUND: AudioContext degraded back to suspended between tests.</b> Android Chrome auto-suspends contexts when no audio output is happening. Each recording must call ctx.resume() immediately before connecting the mic source.');
+  }
+
+  if (lines.length === 0) {
+    lines.push('🟢 All tests passed — signal looks good. Run this on the device exhibiting the problem and compare output.');
+  }
+
+  return lines.join('<br><br>');
+}
+
+// ─── Main runner ───────────────────────────────────────────────────────────
+document.getElementById('run-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ RUNNING…';
+
+  // Reset badges
+  ['t1','t2','t3','t4','t5','t6'].forEach(id => {
+    setBadge(id, '');
+    document.getElementById('badge-' + id).textContent = id[1];
+  });
+
+  try {
+    await runT1();
+    await runT2();
+    await runT3();
+    await runT4();
+    await runT5();
+    await runT6();
+  } catch(e) {
+    console.error('Diagnostic error:', e);
+  }
+
+  // Show diagnosis
+  const summaryEl = document.getElementById('summary');
+  document.getElementById('summary-text').innerHTML = buildDiagnosis();
+  summaryEl.classList.add('show');
+
+  btn.disabled = false;
+  btn.textContent = '↺ RUN AGAIN';
+});
+</script>
+</body>
+</html>
